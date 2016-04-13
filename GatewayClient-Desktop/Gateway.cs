@@ -21,7 +21,7 @@ namespace GatewayClient
         /// <summary>
         /// 版本
         /// </summary>
-        public const string Version = "2.2";
+        public const string Version = "2.1";
         /// <summary>
         /// 超时时间
         /// </summary>
@@ -37,20 +37,21 @@ namespace GatewayClient
             get
             {
                 long now = DateTime.Now.Ticks;
-                if (now - lastUpdateTime >= REFRESH_TIME || info == null)
+                if (lastUpdateTime == 0 || now - lastUpdateTime < REFRESH_TIME)
                 {
-                    //超过更新时间开始更新
-                    double lastFlow = info.HasValue ? info.Value.flow : 0;
-                    info = GetInfo();
-                    if (lastFlow > 0 && lastUpdateTime > 0 && info.HasValue)
-                    {
-                        //计算流量速度
-                        AccountInfo _info = info.Value;
-                        _info.speed = (info.Value.flow - lastFlow) * 10000000.0 / (now - lastUpdateTime);
-                        info = _info;
-                    }
                     lastUpdateTime = now;
+                    AccountInfo? _info = null;
+                    foreach (var host in HostList)
+                    {
+                        _info = Query(host + query_path);
+                        if (_info != null)
+                        {
+                            info = _info;
+                            return info;
+                        }
+                    }
                 }
+
                 return info;
             }
         }
@@ -119,7 +120,7 @@ namespace GatewayClient
         const string login_path = ":801/eportal/?c=ACSetting&a=Login";
         const string logout_path = ":801/eportal/?c=ACSetting&a=Logout";
         const string sucess_title = @"<title>登录成功</title>";
-        private const long REFRESH_TIME = 60 * 10000000;//信息刷新最短时间1分钟
+        private const long REFRESH_TIME = 10 * 10000000;//信息刷新最短时间
         private static long lastUpdateTime = 0;
 
         private static string pwd = null;
@@ -156,15 +157,14 @@ namespace GatewayClient
             WebRequest req = WebRequest.Create(url);
             var proxy = Config.Options["proxy"];
             //代理设置
-            if (proxy == null)
+            if(proxy==null)
             {
-                req.Proxy = null;
-            }
-            else if (proxy.ToLower() != "default")
+                req.Proxy=null;
+            }else if(proxy.ToLower()!="default")
             {
                 req.Proxy = new WebProxy(proxy, true);
             }
-
+            
             req.Method = method;
             req.Timeout = Timeout;
             return req;
@@ -218,24 +218,6 @@ namespace GatewayClient
             }
         }
 
-        /// <summary>
-        /// 查询登录信息
-        /// </summary>
-        /// <returns></returns>
-        static public AccountInfo? GetInfo()
-        {
-            AccountInfo? _info = null;
-            foreach (var host in HostList)
-            {
-                _info = Query(host + query_path);
-                if (_info.HasValue)
-                {
-                    return _info;
-                }
-            }
-            return null;
-        }
-
 
         /// <summary>
         /// 注销网关登陆
@@ -258,7 +240,6 @@ namespace GatewayClient
                     sr.ReadToEnd();
                     sr.Close();
                 }
-                info = null;
                 return true;
             }
             catch
@@ -296,30 +277,27 @@ namespace GatewayClient
                 //解析登录时长
                 string time = s.Remove(0, s.IndexOf(@"time='") + 6);
                 time = time.Remove(time.IndexOf(@"'")).Trim();
-                Double.TryParse(time, out info.time);
+                Double.TryParse(time, out info.Time);
 
                 //流量，换算单位
                 string s_Flow = s.Remove(0, s.IndexOf(@"flow='") + 6);
                 s_Flow = s_Flow.Remove(s_Flow.IndexOf(@"'")).Trim();
-                if (Double.TryParse(s_Flow, out info.flow))
+                if (Double.TryParse(s_Flow, out info.Flow))
                 {
-                    info.flow /= 1024;
+                    info.Flow /= 1024;
                 }
 
                 //余额
                 string fee = s.Remove(0, s.IndexOf(@"fee='") + 5);
                 fee = fee.Remove(fee.IndexOf(@"'")).Trim();
-                if (Double.TryParse(fee, out info.fee))
+                if (Double.TryParse(fee, out info.Fee))
                 {
-                    info.fee /= 10000;
+                    info.Fee /= 10000;
                 }
                 return info;
             }
             catch
             {
-#if DEBUG
-                Console.WriteLine("query err");
-#endif
                 return null;
             }
         }
@@ -348,6 +326,36 @@ namespace GatewayClient
             {
                 return null;
             }
+        }
+    }
+
+    /// <summary>
+    /// 账号信息
+    /// </summary>
+    public struct AccountInfo
+    {
+        /// <summary>
+        /// 账号
+        /// </summary>
+        public string Uid;
+        /// <summary>
+        /// 流量 单位MB
+        /// </summary>
+        public double Flow;
+        /// <summary>
+        /// 余额 单位￥
+        /// </summary>
+        public double Fee;
+        /// <summary>
+        /// 时间 单位s
+        /// </summary>
+        public double Time;
+        public AccountInfo(string uid = null, double flow = 0, double fee = 0, double time = 0)
+        {
+            Uid = uid;
+            Flow = flow;
+            Fee = fee;
+            Time = time;
         }
     }
 }
